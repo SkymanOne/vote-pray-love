@@ -6,3 +6,10 @@ members = [
 ]
 [profile.release]
 panic = "unwind"
+
+[profile.fast]
+inherits = "release"
+opt-level = 0
+lto = "off"
+incremental = true
+codegen-units = 256
