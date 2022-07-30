@@ -23,6 +23,9 @@ use sp_std::prelude::*;
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
+use frame_support::traits::EitherOfDiverse;
+use frame_system::EnsureRoot;
+
 // A few exports that help ease life for downstream crates.
 pub use frame_support::{
 	construct_runtime, parameter_types,
@@ -303,6 +306,67 @@ impl pallet_collective::Config for Runtime {
 	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
 }
 
+
+//let's make identity operations free-of-charge for testing purposes
+parameter_types! {
+	pub const BasicDeposit: Balance = 0;
+	pub const FieldDeposit: Balance = 0;
+	pub const SubAccountDeposit: Balance = 0;
+	pub const MaxSubAccounts: u32 = 100;
+	pub const MaxAdditionalFields: u32 = 100;
+	pub const MaxRegistrars: u32 = 20;
+}
+
+//ensure that at least half of the council votes for
+type EnsureRootOrHalfCouncil = EitherOfDiverse<
+	EnsureRoot<AccountId>,
+	pallet_collective::EnsureProportionMoreThan<AccountId, (), 1, 2>,
+>;
+
+impl pallet_identity::Config for Runtime {
+	/// The overarching event type.
+	type Event = Event;
+
+	/// The currency trait.
+	type Currency = Balances;
+
+	/// The amount held on deposit for a registered identity
+
+	type BasicDeposit = BasicDeposit;
+
+	/// The amount held on deposit per additional field for a registered identity.
+
+	type FieldDeposit = FieldDeposit;
+
+	/// The amount held on deposit for a registered subaccount. This should account for the fact
+	/// that one storage item's value will increase by the size of an account ID, and there will
+	/// be another trie item whose value is the size of an account ID plus 32 bytes.
+	type SubAccountDeposit = SubAccountDeposit;
+
+	/// The maximum number of sub-accounts allowed per identified account.
+	type MaxSubAccounts = MaxSubAccounts;
+
+	/// Maximum number of additional fields that may be stored in an ID. Needed to bound the I/O
+	/// required to access an identity, but can be pretty high.
+	type MaxAdditionalFields = MaxAdditionalFields;
+
+	/// Maxmimum number of registrars allowed in the system. Needed to bound the complexity
+	/// of, e.g., updating judgements.
+	type MaxRegistrars = MaxRegistrars;
+
+	/// What to do with slashed funds.
+	type Slashed = ();
+
+	/// The origin which may forcibly set or remove a name. Root can always do this.
+	type ForceOrigin = EnsureRootOrHalfCouncil;
+
+	/// The origin which may add or remove registrars. Root can always do this.
+	type RegistrarOrigin = EnsureRootOrHalfCouncil;
+
+	/// Weight information for extrinsics in this pallet.
+	type WeightInfo = pallet_identity::weights::SubstrateWeight<Runtime>;
+}
+
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
 	pub enum Runtime where
@@ -321,6 +385,7 @@ construct_runtime!(
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template,
 		Collective: pallet_collective,
+		Identity: pallet_identity
 	}
 );
 
