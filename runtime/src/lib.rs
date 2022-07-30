@@ -267,6 +267,42 @@ impl pallet_template::Config for Runtime {
 	type Event = Event;
 }
 
+parameter_types! {
+	pub const CouncilMotionDuration: BlockNumber = 5 * DAYS;
+	pub const CouncilMaxProposals: u32 = 100;
+	pub const CouncilMaxMembers: u32 = 100;
+}
+
+impl pallet_collective::Config for Runtime {
+	/// The outer origin type.
+	type Origin = Origin;
+
+	/// The outer call dispatch type.
+	type Proposal = Call;
+
+	/// The outer event type.
+	type Event = Event;
+
+	/// The time-out for council motions.
+	type MotionDuration = CouncilMotionDuration;
+
+	/// Maximum number of proposals allowed to be active in parallel.
+	type MaxProposals = CouncilMaxProposals;
+
+	/// The maximum number of members supported by the pallet. Used for weight estimation.
+	///
+	/// NOTE:
+	/// + Benchmarks will need to be re-run and weights adjusted if this changes.
+	/// + This pallet assumes that dependents keep to the limit without enforcing it.
+	type MaxMembers = CouncilMaxMembers;
+
+	/// Default vote strategy of this collective.
+	type DefaultVote = pallet_collective::PrimeDefaultVote;
+
+	/// Weight information for extrinsics in this pallet.
+	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
+}
+
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
 	pub enum Runtime where
@@ -284,6 +320,7 @@ construct_runtime!(
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template,
+		Collective: pallet_collective,
 	}
 );
 
