@@ -3798,6 +3798,7 @@ dependencies = [
  "pallet-grandpa",
  "pallet-identity",
  "pallet-randomness-collective-flip",
+ "pallet-slashing-voting",
  "pallet-sudo",
  "pallet-template",
  "pallet-timestamp",
@@ -4119,6 +4120,20 @@ dependencies = [
  "sp-staking",
  "sp-std",
  "sp-trie",
+]
+
+[[package]]
+name = "pallet-slashing-voting"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
 ]
 
 [[package]]

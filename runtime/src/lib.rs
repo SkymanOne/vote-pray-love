@@ -367,6 +367,10 @@ impl pallet_identity::Config for Runtime {
 	type WeightInfo = pallet_identity::weights::SubstrateWeight<Runtime>;
 }
 
+impl pallet_slashing_voting::Config for Runtime {
+	type Event = Event;
+}
+
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
 	pub enum Runtime where
@@ -385,7 +389,8 @@ construct_runtime!(
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template,
 		Collective: pallet_collective,
-		Identity: pallet_identity
+		Identity: pallet_identity,
+		QuadraticVoting: pallet_slashing_voting
 	}
 );
 
