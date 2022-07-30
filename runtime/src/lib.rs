@@ -367,8 +367,22 @@ impl pallet_identity::Config for Runtime {
 	type WeightInfo = pallet_identity::weights::SubstrateWeight<Runtime>;
 }
 
+pub struct VotingIdentityProvider;
+impl pallet_slashing_voting::IdentityProvider<AccountId> for VotingIdentityProvider {
+	fn check_existence(account: &AccountId) -> bool {
+		Identity::identity(account).is_some()
+	}
+}
+
+parameter_types! {
+	pub const EntryFee: Balance = 1_000_000_000;
+}
+
 impl pallet_slashing_voting::Config for Runtime {
 	type Event = Event;
+	type IdentityProvider = VotingIdentityProvider;
+	type Currency = Balances;
+	type BasicDeposit = EntryFee;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
