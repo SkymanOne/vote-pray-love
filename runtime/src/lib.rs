@@ -46,6 +46,8 @@ use pallet_transaction_payment::CurrencyAdapter;
 pub use sp_runtime::BuildStorage;
 pub use sp_runtime::{Perbill, Permill};
 
+pub const UNIT: u128 = 1000000000000;
+
 /// Import the template pallet.
 pub use pallet_template;
 
@@ -375,7 +377,7 @@ impl pallet_slashing_voting::IdentityProvider<AccountId> for VotingIdentityProvi
 }
 
 parameter_types! {
-	pub const EntryFee: Balance = 1_000_000_000;
+	pub const EntryFee: Balance = 30_000 * UNIT;
 }
 
 impl pallet_slashing_voting::Config for Runtime {
