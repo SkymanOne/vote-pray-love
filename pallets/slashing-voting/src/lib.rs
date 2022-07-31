@@ -1,20 +1,22 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub use pallet::*;
+pub mod types;
 
 #[frame_support::pallet]
 pub mod pallet {
-	use frame_support::dispatch::{DispatchError, DispatchResult};
-	use frame_support::traits::{BalanceStatus, Currency, OnUnbalanced, ReservableCurrency};
+	use frame_support::dispatch::DispatchResult;
+	use frame_support::traits::{Currency, ReservableCurrency};
 	use frame_support::{
 		pallet_prelude::{CountedStorageMap, ValueQuery, *},
-		traits::tokens::Balance,
-		Blake2_128Concat, StorageMap,
+		Blake2_128Concat, Identity, StorageMap,
 	};
 	use frame_system::pallet_prelude::*;
 	use sp_std::vec::Vec;
+	use crate::types::Proposal;
 
 	pub type MemberCount = u32;
+	pub type ProposalIndex = u32;
 
 	type BalanceOf<T> =
 		<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
@@ -25,11 +27,19 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
+		/// general event that happens in the system
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+		/// glueing trait that provides bridge to identity pallet
+		/// In other words, allows to interact with Identity component
 		type IdentityProvider: IdentityProvider<Self::AccountId>;
+		/// Currency type, required to manipulate voters balances and deposits
 		type Currency: ReservableCurrency<Self::AccountId>;
+		/// The amount of funds that is required to have skin in a game
 		#[pallet::constant]
 		type BasicDeposit: Get<BalanceOf<Self>>;
+
+		/// Maximum number of proposals allowed to be active in parallel.
+		type MaxProposals: Get<ProposalIndex>;
 	}
 
 	#[pallet::event]
@@ -120,6 +130,10 @@ pub mod pallet {
 	pub type Members<T: Config> =
 		CountedStorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>, ValueQuery>;
 
+	#[pallet::storage]
+	pub type Proposals<T: Config> =
+		StorageValue<_, Vec<Proposal<T::AccountId, T::BlockNumber>>, ValueQuery>;
+
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
 
@@ -146,6 +160,8 @@ pub mod pallet {
 			T::Currency::reserve(&signer, T::BasicDeposit::get())?;
 
 			<Members<T>>::insert(&signer, T::BasicDeposit::get());
+
+			Self::deposit_event(Event::<T>::Joined(signer));
 
 			Ok(())
 		}

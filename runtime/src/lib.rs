@@ -378,6 +378,7 @@ impl pallet_slashing_voting::IdentityProvider<AccountId> for VotingIdentityProvi
 
 parameter_types! {
 	pub const EntryFee: Balance = 30_000 * UNIT;
+	pub const MaxProposals: u32 = 10u32;
 }
 
 impl pallet_slashing_voting::Config for Runtime {
@@ -385,6 +386,7 @@ impl pallet_slashing_voting::Config for Runtime {
 	type IdentityProvider = VotingIdentityProvider;
 	type Currency = Balances;
 	type BasicDeposit = EntryFee;
+	type MaxProposals = MaxProposals;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
