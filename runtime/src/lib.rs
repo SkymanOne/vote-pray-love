@@ -387,6 +387,8 @@ impl pallet_slashing_voting::Config for Runtime {
 	type Currency = Balances;
 	type BasicDeposit = EntryFee;
 	type MaxProposals = MaxProposals;
+	type Public = <Signature as Verify>::Signer;
+    type Signature = MultiSignature;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.

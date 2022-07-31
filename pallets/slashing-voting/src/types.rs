@@ -21,7 +21,6 @@ pub struct Proposal<AccountId, BlockNumber> {
 	pub proposer: AccountId,
 	pub ayes: Vec<AccountId>,
 	pub nays: Vec<AccountId>,
-	pub commits: Vec<AccountId>,
 	pub end: BlockNumber,
 }
 
@@ -43,9 +42,8 @@ pub enum Vote {
 /// ```
 
 #[derive(Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, TypeInfo)]
-pub struct Commit<AccountId, Signature> {
-	pub voter: AccountId,
-	pub data: Signature,
+pub struct Commit<Signature> {
+	pub signature: Signature,
 	pub salt: u32
 }
 

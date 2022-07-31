@@ -10,6 +10,7 @@ pub mod pallet {
 	use frame_support::dispatch::{DispatchError, DispatchResult};
 	use frame_support::ensure;
 	use frame_support::pallet_prelude::CountedStorageMap;
+	use frame_support::pallet_prelude::StorageDoubleMap;
 	use frame_support::pallet_prelude::StorageMap;
 	use frame_support::sp_runtime::traits::Hash;
 	use frame_support::traits::{Currency, ReservableCurrency};
@@ -17,10 +18,10 @@ pub mod pallet {
 		pallet_prelude::{OptionQuery, ValueQuery, *},
 		Blake2_128Concat, Identity,
 	};
-	use sp_core::sr25519::Signature;
 	use frame_system::{ensure_signed, pallet_prelude::*};
 	use sp_std::boxed::Box;
 	use sp_std::vec::Vec;
+	use sp_runtime::traits::{IdentifyAccount, Member, Verify};
 
 	pub type MemberCount = u32;
 	pub type ProposalIndex = u32;
@@ -51,6 +52,9 @@ pub mod pallet {
 
 		/// Maximum number of proposals allowed to be active in parallel.
 		type MaxProposals: Get<ProposalIndex>;
+
+		type Public: IdentifyAccount<AccountId = Self::AccountId>;
+		type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
 	}
 
 	#[pallet::event]
@@ -132,6 +136,10 @@ pub mod pallet {
 		NotEnoughFunds,
 		/// Proposal Ended
 		ProposalEnded,
+		/// No commit has been submitted
+		NoCommit,
+		/// Could not verify signature of a commit
+		SignatureInvalid,
 	}
 
 	//we use unbounded storage because we size of council can vary
@@ -153,7 +161,8 @@ pub mod pallet {
 		StorageMap<_, Identity, T::Hash, Proposal<T::AccountId, T::BlockNumber>>;
 
 	#[pallet::storage]
-	pub type Commits<T: Config> = StorageMap<_, Identity, T::Hash, Vec<Commit<T::AccountId, Signature>>, ValueQuery>;
+	pub type Commits<T: Config> =
+		StorageDoubleMap<_, Identity, T::Hash, Identity, T::AccountId, Commit<T::Signature>>;
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
@@ -221,7 +230,6 @@ pub mod pallet {
 				proposer: signer.clone(),
 				ayes: Vec::new(),
 				nays: Vec::new(),
-				commits: Vec::new(),
 				end,
 			};
 
@@ -240,6 +248,35 @@ pub mod pallet {
 			//check if signer is a member already | tested
 			ensure!(Self::is_member(&signer), Error::<T>::NotMember);
 
+			let result = Self::already_voted_and_exist(&signer, &proposal);
+			ensure!(result.is_some(), Error::<T>::ProposalMissing);
+
+			let voted = result.unwrap();
+			ensure!(!voted, Error::<T>::DuplicateVote);
+
+			//verify the signature
+			let commit = <Commits<T>>::get(&proposal, &signer);
+			ensure!(commit.is_some(), Error::<T>::NoCommit);
+			let commit = commit.unwrap();
+
+			let data = (vote.clone(), commit.salt).encode();
+
+			let valid_sign = commit.signature.verify(data.as_slice(), &signer);
+			ensure!(valid_sign, Error::<T>::SignatureInvalid);
+
+			let proposal_data = <ProposalData<T>>::get(&proposal);
+			ensure!(proposal_data.is_some(), Error::<T>::ProposalMissing);
+
+			let mut proposal_data = proposal_data.unwrap();
+			match vote {
+				Vote::Yes => proposal_data.ayes.push(signer.clone()),
+				Vote::No => proposal_data.nays.push(signer.clone()),
+			}
+
+			<ProposalData<T>>::insert(proposal, proposal_data);
+
+			Self::deposit_event(Event::<T>::Voted { account: signer, proposal_hash: proposal });
+
 			Ok(())
 		}
 
@@ -248,18 +285,15 @@ pub mod pallet {
 		pub fn commit_vote(
 			origin: OriginFor<T>,
 			proposal: T::Hash,
-			data: Signature,
-			salt: u32
+			data: T::Signature,
+			salt: u32,
 		) -> DispatchResult {
 			let signer = ensure_signed(origin)?;
 
 			//check if signer is a member already | tested
 			ensure!(Self::is_member(&signer), Error::<T>::NotMember);
 
-			let result = Self::already_committed_and_exist(&signer, &proposal);
-			ensure!(result.is_some(), Error::<T>::ProposalMissing);
-
-			let committed = result.unwrap();
+			let committed = Self::already_committed_and_exist(&signer, &proposal);
 			ensure!(!committed, Error::<T>::DuplicateVote);
 
 			let proposal_data = <ProposalData<T>>::get(&proposal);
@@ -271,15 +305,9 @@ pub mod pallet {
 
 			ensure!(current_block < proposal_data.end, Error::<T>::ProposalEnded);
 
-			let commit = Commit {
-				voter: signer.clone(),
-				data,
-				salt
-			};
+			let commit = Commit { signature: data, salt };
 
-			<Commits<T>>::mutate(proposal, |list| {
-				list.push(commit);
-			});
+			<Commits<T>>::insert(proposal, signer.clone(), commit);
 
 			Self::deposit_event(Event::<T>::Committed { account: signer, proposal_hash: proposal });
 
@@ -307,12 +335,10 @@ impl<T: Config> Pallet<T> {
 		}
 	}
 
-	pub fn already_committed_and_exist(who: &T::AccountId, proposal_hash: &T::Hash) -> Option<bool> {
-		let result = <ProposalData<T>>::get(proposal_hash);
-		if let Some(proposal) = result {
-			Some(proposal.commits.contains(who) || proposal.commits.contains(who))
-		} else {
-			None
-		}
+	pub fn already_committed_and_exist(
+		who: &T::AccountId,
+		proposal_hash: &T::Hash,
+	) -> bool {
+		<Commits<T>>::get(proposal_hash, who).is_some()
 	}
 }
