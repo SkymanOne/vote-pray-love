@@ -17,10 +17,10 @@ pub enum Data {
 
 #[derive(Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, TypeInfo)]
 pub struct Proposal<AccountId, BlockNumber> {
-	title: Data,
-	proposer: AccountId,
-	ayes: Vec<AccountId>,
-	nays: Vec<AccountId>,
-	end: BlockNumber,
+	pub title: Data,
+	pub proposer: AccountId,
+	pub ayes: Vec<AccountId>,
+	pub nays: Vec<AccountId>,
+	pub end: BlockNumber,
 }
 
