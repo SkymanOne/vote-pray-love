@@ -24,3 +24,9 @@ pub struct Proposal<AccountId, BlockNumber> {
 	pub end: BlockNumber,
 }
 
+#[derive(Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, TypeInfo)]
+pub enum Vote {
+	Yes,
+	No
+}
+
