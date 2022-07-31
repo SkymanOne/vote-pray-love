@@ -6,7 +6,7 @@ pub mod types;
 
 #[frame_support::pallet]
 pub mod pallet {
-	use crate::types::{Proposal, Data, Vote};
+	use crate::types::{Commit, Data, Proposal, Vote};
 	use frame_support::dispatch::{DispatchError, DispatchResult};
 	use frame_support::ensure;
 	use frame_support::pallet_prelude::CountedStorageMap;
@@ -17,6 +17,7 @@ pub mod pallet {
 		pallet_prelude::{OptionQuery, ValueQuery, *},
 		Blake2_128Concat, Identity,
 	};
+	use sp_core::sr25519::Signature;
 	use frame_system::{ensure_signed, pallet_prelude::*};
 	use sp_std::boxed::Box;
 	use sp_std::vec::Vec;
@@ -27,7 +28,9 @@ pub mod pallet {
 	type BalanceOf<T> =
 		<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
 
-	type ProposalOf<T> = Box<Proposal<<T as frame_system::Config>::AccountId, <T as frame_system::Config>::BlockNumber>>;
+	// type ProposalOf<T> = Box<
+	// 	Proposal<<T as frame_system::Config>::AccountId, <T as frame_system::Config>::BlockNumber>,
+	// >;
 
 	pub trait IdentityProvider<AccountId> {
 		fn check_existence(account: &AccountId) -> bool;
@@ -66,6 +69,12 @@ pub mod pallet {
 		/// A motion (given hash) has been voted on by given account, leaving
 		/// a tally (yes votes and no votes given respectively as `MemberCount`).
 		Voted {
+			account: T::AccountId,
+			proposal_hash: T::Hash,
+		},
+		/// A motion (given hash) has been committed on by given account, leaving
+		/// a tally (yes votes and no votes given respectively as `MemberCount`).
+		Committed {
 			account: T::AccountId,
 			proposal_hash: T::Hash,
 		},
@@ -121,6 +130,8 @@ pub mod pallet {
 		WrongProposalLength,
 		/// Not enough funds to join the voting council
 		NotEnoughFunds,
+		/// Proposal Ended
+		ProposalEnded,
 	}
 
 	//we use unbounded storage because we size of council can vary
@@ -140,6 +151,9 @@ pub mod pallet {
 	#[pallet::storage]
 	pub type ProposalData<T: Config> =
 		StorageMap<_, Identity, T::Hash, Proposal<T::AccountId, T::BlockNumber>>;
+
+	#[pallet::storage]
+	pub type Commits<T: Config> = StorageMap<_, Identity, T::Hash, Vec<Commit<T::AccountId, Signature>>, ValueQuery>;
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
@@ -172,8 +186,13 @@ pub mod pallet {
 			Ok(())
 		}
 
+		/// Creates the proposal with given text and duration in blocks
 		#[pallet::weight(1_000)]
-		pub fn create_proposal(origin: OriginFor<T>, proposal_text: Box<Data>, end: T::BlockNumber) -> DispatchResult {
+		pub fn create_proposal(
+			origin: OriginFor<T>,
+			proposal_text: Box<Data>,
+			duration: T::BlockNumber,
+		) -> DispatchResult {
 			let signer = ensure_signed(origin)?;
 
 			//check if signer is a member already | tested
@@ -190,59 +209,79 @@ pub mod pallet {
 			let (exist, _) = Self::proposal_exist(&proposal_hash);
 			ensure!(!exist, Error::<T>::DuplicateProposal);
 
-			ensure!(<Proposals<T>>::try_append(proposal_hash).is_ok(), Error::<T>::WrongProposalLength);
+			ensure!(
+				<Proposals<T>>::try_append(proposal_hash).is_ok(),
+				Error::<T>::WrongProposalLength
+			);
+
+			let end = duration + frame_system::Pallet::<T>::block_number();
 
 			let proposal = Proposal {
 				title: *proposal_text,
 				proposer: signer.clone(),
 				ayes: Vec::new(),
 				nays: Vec::new(),
-				end
+				commits: Vec::new(),
+				end,
 			};
 
 			<ProposalData<T>>::insert(proposal_hash, proposal);
 
-			Self::deposit_event(Event::<T>::Proposed {
-				account: signer,
-				proposal_hash
-			});
+			Self::deposit_event(Event::<T>::Proposed { account: signer, proposal_hash });
 
 			Ok(())
 		}
 
+		//TODO: reveal vote
 		#[pallet::weight(1_000)]
-		pub fn vote(origin: OriginFor<T>, proposal: T::Hash, vote: Vote) -> DispatchResult {
+		pub fn reveal_vote(origin: OriginFor<T>, proposal: T::Hash, vote: Vote) -> DispatchResult {
 			let signer = ensure_signed(origin)?;
 
 			//check if signer is a member already | tested
 			ensure!(Self::is_member(&signer), Error::<T>::NotMember);
 
-			let result = Self::already_voted_and_exist(&signer, &proposal);
+			Ok(())
+		}
+
+		/// Secretly submit the vote with the salt
+		#[pallet::weight(1_000)]
+		pub fn commit_vote(
+			origin: OriginFor<T>,
+			proposal: T::Hash,
+			data: Signature,
+			salt: u32
+		) -> DispatchResult {
+			let signer = ensure_signed(origin)?;
+
+			//check if signer is a member already | tested
+			ensure!(Self::is_member(&signer), Error::<T>::NotMember);
+
+			let result = Self::already_committed_and_exist(&signer, &proposal);
 			ensure!(result.is_some(), Error::<T>::ProposalMissing);
 
-			let voted = result.unwrap();
-			ensure!(!voted, Error::<T>::DuplicateVote);
+			let committed = result.unwrap();
+			ensure!(!committed, Error::<T>::DuplicateVote);
 
 			let proposal_data = <ProposalData<T>>::get(&proposal);
 			ensure!(proposal_data.is_some(), Error::<T>::ProposalMissing);
 
-			let mut proposal_data = proposal_data.unwrap();
+			let proposal_data = proposal_data.unwrap();
 
-			match vote {
-				Vote::Yes => {
-					proposal_data.ayes.push(signer.clone());
-				}
-				Vote::No => {
-					proposal_data.nays.push(signer.clone());
-				}
+			let current_block = frame_system::Pallet::<T>::block_number();
+
+			ensure!(current_block < proposal_data.end, Error::<T>::ProposalEnded);
+
+			let commit = Commit {
+				voter: signer.clone(),
+				data,
+				salt
 			};
 
-			<ProposalData<T>>::set(proposal, Some(proposal_data));
-
-			Self::deposit_event(Event::<T>::Voted {
-				account: signer,
-				proposal_hash: proposal
+			<Commits<T>>::mutate(proposal, |list| {
+				list.push(commit);
 			});
+
+			Self::deposit_event(Event::<T>::Committed { account: signer, proposal_hash: proposal });
 
 			Ok(())
 		}
@@ -263,6 +302,15 @@ impl<T: Config> Pallet<T> {
 		let result = <ProposalData<T>>::get(proposal_hash);
 		if let Some(proposal) = result {
 			Some(proposal.ayes.contains(who) || proposal.nays.contains(who))
+		} else {
+			None
+		}
+	}
+
+	pub fn already_committed_and_exist(who: &T::AccountId, proposal_hash: &T::Hash) -> Option<bool> {
+		let result = <ProposalData<T>>::get(proposal_hash);
+		if let Some(proposal) = result {
+			Some(proposal.commits.contains(who) || proposal.commits.contains(who))
 		} else {
 			None
 		}

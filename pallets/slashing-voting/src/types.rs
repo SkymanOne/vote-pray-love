@@ -21,6 +21,7 @@ pub struct Proposal<AccountId, BlockNumber> {
 	pub proposer: AccountId,
 	pub ayes: Vec<AccountId>,
 	pub nays: Vec<AccountId>,
+	pub commits: Vec<AccountId>,
 	pub end: BlockNumber,
 }
 
@@ -28,5 +29,23 @@ pub struct Proposal<AccountId, BlockNumber> {
 pub enum Vote {
 	Yes,
 	No
+}
+
+/// To generate signature
+///  ```
+///  fn generate() -> String {
+///     let pair: sp_core::sr25519::Pair = Pair::from_string("//Alice///password", None).unwrap();
+///     let payload = (Vote::No, 10u32).encode();
+///     let payload: [u8; 6] = payload.encode().try_into().unwrap();
+///     let signied = pair.sign(&payload).0;
+///     format!("{:02x?}", signied)
+/// }
+/// ```
+
+#[derive(Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, TypeInfo)]
+pub struct Commit<AccountId, Signature> {
+	pub voter: AccountId,
+	pub data: Signature,
+	pub salt: u32
 }
 
