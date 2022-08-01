@@ -48,9 +48,6 @@ pub use sp_runtime::{Perbill, Permill};
 
 pub const UNIT: u128 = 1000000000000;
 
-/// Import the template pallet.
-pub use pallet_template;
-
 /// An index to a block.
 pub type BlockNumber = u32;
 
@@ -267,47 +264,6 @@ impl pallet_sudo::Config for Runtime {
 	type Call = Call;
 }
 
-/// Configure the pallet-template in pallets/template.
-impl pallet_template::Config for Runtime {
-	type Event = Event;
-}
-
-parameter_types! {
-	pub const CouncilMotionDuration: BlockNumber = 5 * DAYS;
-	pub const CouncilMaxProposals: u32 = 100;
-	pub const CouncilMaxMembers: u32 = 100;
-}
-
-impl pallet_collective::Config for Runtime {
-	/// The outer origin type.
-	type Origin = Origin;
-
-	/// The outer call dispatch type.
-	type Proposal = Call;
-
-	/// The outer event type.
-	type Event = Event;
-
-	/// The time-out for council motions.
-	type MotionDuration = CouncilMotionDuration;
-
-	/// Maximum number of proposals allowed to be active in parallel.
-	type MaxProposals = CouncilMaxProposals;
-
-	/// The maximum number of members supported by the pallet. Used for weight estimation.
-	///
-	/// NOTE:
-	/// + Benchmarks will need to be re-run and weights adjusted if this changes.
-	/// + This pallet assumes that dependents keep to the limit without enforcing it.
-	type MaxMembers = CouncilMaxMembers;
-
-	/// Default vote strategy of this collective.
-	type DefaultVote = pallet_collective::PrimeDefaultVote;
-
-	/// Weight information for extrinsics in this pallet.
-	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
-}
-
 //let's make identity operations free-of-charge for testing purposes
 parameter_types! {
 	pub const BasicDeposit: Balance = 0;
@@ -317,12 +273,6 @@ parameter_types! {
 	pub const MaxAdditionalFields: u32 = 100;
 	pub const MaxRegistrars: u32 = 20;
 }
-
-//ensure that at least half of the council votes for
-type EnsureRootOrHalfCouncil = EitherOfDiverse<
-	EnsureRoot<AccountId>,
-	pallet_collective::EnsureProportionMoreThan<AccountId, (), 1, 2>,
->;
 
 impl pallet_identity::Config for Runtime {
 	/// The overarching event type.
@@ -359,10 +309,10 @@ impl pallet_identity::Config for Runtime {
 	type Slashed = ();
 
 	/// The origin which may forcibly set or remove a name. Root can always do this.
-	type ForceOrigin = EnsureRootOrHalfCouncil;
+	type ForceOrigin = EnsureRoot<AccountId>;
 
 	/// The origin which may add or remove registrars. Root can always do this.
-	type RegistrarOrigin = EnsureRootOrHalfCouncil;
+	type RegistrarOrigin = EnsureRoot<AccountId>;
 
 	/// Weight information for extrinsics in this pallet.
 	type WeightInfo = pallet_identity::weights::SubstrateWeight<Runtime>;
@@ -405,9 +355,7 @@ construct_runtime!(
 		Balances: pallet_balances,
 		TransactionPayment: pallet_transaction_payment,
 		Sudo: pallet_sudo,
-		// Include the custom logic from the pallet-template in the runtime.
-		TemplateModule: pallet_template,
-		Collective: pallet_collective,
+
 		Identity: pallet_identity,
 		QuadraticVoting: pallet_slashing_voting
 	}
