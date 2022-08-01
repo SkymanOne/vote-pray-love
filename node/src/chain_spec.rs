@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use node_template_runtime::{
-	AccountId, AuraConfig, BalancesConfig, GenesisConfig, GrandpaConfig, Signature, SudoConfig,
-	SystemConfig, WASM_BINARY, CollectiveConfig,
+	AccountId, AuraConfig, BalancesConfig, CollectiveConfig, GenesisConfig, GrandpaConfig,
+	Signature, SudoConfig, SystemConfig, WASM_BINARY,
 };
 use sc_service::ChainType;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -154,9 +154,6 @@ fn testnet_genesis(
 			key: Some(root_key),
 		},
 		transaction_payment: Default::default(),
-		collective: CollectiveConfig {
-			phantom: PhantomData::default(),
-			members: endowed_accounts
-		}
+		collective: CollectiveConfig { phantom: PhantomData::default(), members: endowed_accounts },
 	}
 }

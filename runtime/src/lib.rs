@@ -308,7 +308,6 @@ impl pallet_collective::Config for Runtime {
 	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
 }
 
-
 //let's make identity operations free-of-charge for testing purposes
 parameter_types! {
 	pub const BasicDeposit: Balance = 0;
@@ -388,7 +387,7 @@ impl pallet_slashing_voting::Config for Runtime {
 	type BasicDeposit = EntryFee;
 	type MaxProposals = MaxProposals;
 	type Public = <Signature as Verify>::Signer;
-    type Signature = MultiSignature;
+	type Signature = MultiSignature;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.

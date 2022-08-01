@@ -7,7 +7,7 @@ pub mod types;
 #[frame_support::pallet]
 pub mod pallet {
 	use crate::types::{Commit, Data, Proposal, Vote};
-	use frame_support::dispatch::{DispatchError, DispatchResult};
+	use frame_support::dispatch::DispatchResult;
 	use frame_support::ensure;
 	use frame_support::pallet_prelude::CountedStorageMap;
 	use frame_support::pallet_prelude::StorageDoubleMap;
@@ -15,13 +15,13 @@ pub mod pallet {
 	use frame_support::sp_runtime::traits::Hash;
 	use frame_support::traits::{Currency, ReservableCurrency};
 	use frame_support::{
-		pallet_prelude::{OptionQuery, ValueQuery, *},
+		pallet_prelude::{ValueQuery, *},
 		Blake2_128Concat, Identity,
 	};
 	use frame_system::{ensure_signed, pallet_prelude::*};
+	use sp_runtime::traits::{IdentifyAccount, Member, Verify};
 	use sp_std::boxed::Box;
 	use sp_std::vec::Vec;
-	use sp_runtime::traits::{IdentifyAccount, Member, Verify};
 
 	pub type MemberCount = u32;
 	pub type ProposalIndex = u32;
@@ -335,10 +335,7 @@ impl<T: Config> Pallet<T> {
 		}
 	}
 
-	pub fn already_committed_and_exist(
-		who: &T::AccountId,
-		proposal_hash: &T::Hash,
-	) -> bool {
+	pub fn already_committed_and_exist(who: &T::AccountId, proposal_hash: &T::Hash) -> bool {
 		<Commits<T>>::get(proposal_hash, who).is_some()
 	}
 }
