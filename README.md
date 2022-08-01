@@ -7,8 +7,8 @@ Polkadot Blockchain Academy 2022 Cohort Final Exam Project.
 - [x] Anonymous quadratic system (commit-reveal)
 - [x] Staking
 - [x] Slashing
-- [ ] Caching-out
-- [ ] Tests
+- [x] Caching-out
+- [ ] Tests & Mocks
 
 ## Potential idea for anonymous voting
 
