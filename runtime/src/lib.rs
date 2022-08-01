@@ -328,6 +328,9 @@ impl pallet_slashing_voting::IdentityProvider<AccountId> for VotingIdentityProvi
 parameter_types! {
 	pub const EntryFee: Balance = 30_000 * UNIT;
 	pub const MaxProposals: u32 = 10u32;
+	pub const RevealLength: BlockNumber = 50u32;
+	pub const MinLength: BlockNumber = 50u32;
+	pub const MaxTokens: u8 = 100u8;
 }
 
 impl pallet_slashing_voting::Config for Runtime {
@@ -338,6 +341,9 @@ impl pallet_slashing_voting::Config for Runtime {
 	type MaxProposals = MaxProposals;
 	type Public = <Signature as Verify>::Signer;
 	type Signature = MultiSignature;
+	type RevealLength = RevealLength;
+	type MinLength = MinLength;
+	type MaxVotingTokens = MaxTokens;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
