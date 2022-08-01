@@ -1,11 +1,21 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use frame_support::traits::Get;
+use frame_support::traits::ReservableCurrency;
 use frame_support::BoundedVec;
 pub use pallet::*;
+use sp_runtime::traits::AccountIdConversion;
+use sp_runtime::traits::CheckedDiv;
+use sp_runtime::DispatchError;
+use sp_std::borrow::ToOwned;
+use sp_std::vec::Vec;
 pub mod types;
 
 #[frame_support::pallet]
 pub mod pallet {
+
+	use core::cmp::Ordering;
+
 	use crate::types::{Commit, Data, Proposal, Vote};
 	use frame_support::dispatch::DispatchResult;
 	use frame_support::ensure;
@@ -16,18 +26,19 @@ pub mod pallet {
 	use frame_support::traits::{Currency, ReservableCurrency};
 	use frame_support::{
 		pallet_prelude::{ValueQuery, *},
-		Blake2_128Concat, Identity,
+		Blake2_128Concat, Identity, PalletId,
 	};
 	use frame_system::{ensure_signed, pallet_prelude::*};
 	use sp_runtime::traits::{IdentifyAccount, Member, Verify};
 	use sp_std::boxed::Box;
 	use sp_std::vec::Vec;
+	use sp_std::vec;
 
 	pub type MemberCount = u32;
 	pub type ProposalIndex = u32;
 	pub type VoteToken = u8;
 
-	type BalanceOf<T> =
+	pub type BalanceOf<T> =
 		<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
 
 	// type ProposalOf<T> = Box<
@@ -54,17 +65,21 @@ pub mod pallet {
 		#[pallet::constant]
 		type RevealLength: Get<Self::BlockNumber>;
 		/// Maximum number of proposals allowed to be active in parallel.
+		#[pallet::constant]
 		type MaxProposals: Get<ProposalIndex>;
 		/// Minimum length of proposal
 		#[pallet::constant]
 		type MinLength: Get<Self::BlockNumber>;
-
 		/// Minimum length of proposal
 		#[pallet::constant]
 		type MaxVotingTokens: Get<u8>;
-
+		// Public ket type to identify accounts and verify signatures
 		type Public: IdentifyAccount<AccountId = Self::AccountId>;
+		// Signature type to verify signed votes
 		type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
+		/// The council's pallet id, used for deriving its sovereign account ID.
+		#[pallet::constant]
+		type PalletId: Get<PalletId>;
 	}
 
 	#[pallet::event]
@@ -142,7 +157,7 @@ pub mod pallet {
 		WrongProposalLength,
 		/// Not enough funds to join the voting council
 		NotEnoughFunds,
-		///
+		/// Voter does not have enough voting tokens to submit a vote
 		NotEnoughVotingTokens,
 		/// Voting phase ended
 		VoteEnded,
@@ -158,6 +173,10 @@ pub mod pallet {
 		NoCommit,
 		/// Could not verify signature of a commit
 		SignatureInvalid,
+		/// The voter is in the middle of vote
+		InMotion,
+		/// Proposal is still going
+		NotFinished,
 	}
 
 	//we use unbounded storage because we size of council can vary
@@ -176,7 +195,7 @@ pub mod pallet {
 
 	#[pallet::storage]
 	pub type ProposalData<T: Config> =
-		StorageMap<_, Identity, T::Hash, Proposal<T::AccountId, T::BlockNumber>>;
+		StorageMap<_, Identity, T::Hash, Proposal<T::AccountId, T::BlockNumber, BalanceOf<T>>>;
 
 	#[pallet::storage]
 	pub type AccountVotes<T: Config> = StorageMap<_, Identity, T::AccountId, VoteToken, ValueQuery>;
@@ -187,6 +206,28 @@ pub mod pallet {
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
+
+	#[pallet::genesis_config]
+	pub struct GenesisConfig;
+
+	#[cfg(feature = "std")]
+	impl Default for GenesisConfig {
+		fn default() -> Self {
+			Self
+		}
+	}
+
+	#[pallet::genesis_build]
+	impl<T: Config> GenesisBuild<T> for GenesisConfig {
+		fn build(&self) {
+			// Create Treasury account
+			let account_id = <Pallet<T>>::account_id();
+			let min = T::Currency::minimum_balance();
+			if T::Currency::free_balance(&account_id) < min {
+				let _ = T::Currency::make_free_balance_be(&account_id, min);
+			}
+		}
+	}
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
@@ -262,6 +303,7 @@ pub mod pallet {
 				reveal_end: None,
 				votes: Vec::new(),
 				revealed: Vec::new(),
+				payout: BalanceOf::<T>::default(),
 			};
 
 			<ProposalData<T>>::insert(proposal_hash, proposal);
@@ -307,7 +349,7 @@ pub mod pallet {
 			let proposal_data = <ProposalData<T>>::get(&proposal);
 			ensure!(proposal_data.is_some(), Error::<T>::ProposalMissing);
 
-			let proposal_data = proposal_data.unwrap();
+			let mut proposal_data = proposal_data.unwrap();
 			ensure!(proposal_data.reveal_end.is_some(), Error::<T>::RevealNotStarted);
 
 			let reveal_end = proposal_data.reveal_end.unwrap();
@@ -315,11 +357,61 @@ pub mod pallet {
 			ensure!(reveal_end <= current_block, Error::<T>::TooEarly);
 
 			//refund voting tokens to voters
-			for (_, (account, amount)) in proposal_data.votes.iter().enumerate() {
-				Self::deposit_votes(account, *amount);
+			for (_, (account, votes, _)) in proposal_data.votes.iter().enumerate() {
+				let amount = u8::pow(*votes, 2);
+				Self::deposit_votes(account, amount);
 			}
 
-			//TODO: slashing
+			//deduce winning side
+			let result = proposal_data.ayes.cmp(&proposal_data.nays);
+			let pot_address = Self::account_id();
+			let amount: BalanceOf<T>;
+			match result {
+				Ordering::Greater => {
+					let losers: Vec<T::AccountId> = proposal_data
+						.votes
+						.iter()
+						.filter(|entry| entry.2 == Vote::No)
+						.map(|entry| entry.0.clone())
+						.collect();
+					amount = Self::slash_voting_side(losers, &pot_address)?;
+					let winners: Vec<T::AccountId> = proposal_data
+						.votes
+						.iter()
+						.filter(|entry| entry.2 == Vote::Yes)
+						.map(|entry| entry.0.clone())
+						.collect();
+					Self::reward_voting_side(winners, &pot_address, amount)?;
+				},
+				Ordering::Less => {
+					let losers: Vec<T::AccountId> = proposal_data
+						.votes
+						.iter()
+						.filter(|entry| entry.2 == Vote::Yes)
+						.map(|entry| entry.0.clone())
+						.collect();
+					amount = Self::slash_voting_side(losers, &pot_address)?;
+					let winners: Vec<T::AccountId> = proposal_data
+						.votes
+						.iter()
+						.filter(|entry| entry.2 == Vote::No)
+						.map(|entry| entry.0.clone())
+						.collect();
+					Self::reward_voting_side(winners, &pot_address, amount)?;
+				},
+				Ordering::Equal => {
+					let losers: Vec<T::AccountId> =
+						proposal_data.votes.iter().map(|entry| entry.0.clone()).collect();
+					amount = Self::slash_voting_side(losers, &pot_address)?;
+					Self::reward_voting_side(
+						vec![proposal_data.clone().proposer],
+						&pot_address,
+						amount,
+					)?;
+				},
+			}
+			proposal_data.payout = amount;
+			<ProposalData<T>>::insert(&proposal, proposal_data);
 
 			Ok(())
 		}
@@ -327,11 +419,7 @@ pub mod pallet {
 		/// Reveal your vote.
 		/// Can be done anytime before reveal vote timeout but is not incentivised
 		#[pallet::weight(10_000_000)]
-		pub fn reveal_vote(
-			origin: OriginFor<T>,
-			proposal: T::Hash,
-			vote: Vote,
-		) -> DispatchResult {
+		pub fn reveal_vote(origin: OriginFor<T>, proposal: T::Hash, vote: Vote) -> DispatchResult {
 			let signer = ensure_signed(origin)?;
 
 			//check if signer is a member already | tested
@@ -364,7 +452,7 @@ pub mod pallet {
 				Vote::No => proposal_data.nays += commit.number as u32,
 			}
 
-			proposal_data.votes.push((signer.clone(), commit.number));
+			proposal_data.votes.push((signer.clone(), commit.number, vote));
 			proposal_data.revealed.push(signer.clone());
 
 			<ProposalData<T>>::insert(proposal, proposal_data);
@@ -431,7 +519,7 @@ impl<T: Config> Pallet<T> {
 
 	pub fn already_voted(
 		who: &T::AccountId,
-		proposal: &types::Proposal<T::AccountId, T::BlockNumber>,
+		proposal: &types::Proposal<T::AccountId, T::BlockNumber, BalanceOf<T>>,
 	) -> bool {
 		proposal.revealed.contains(who)
 	}
@@ -461,5 +549,52 @@ impl<T: Config> Pallet<T> {
 			Ok(())
 		})
 		.is_ok()
+	}
+
+	/// Slashes the losing side, puts money in a pot and returns the total amount slashed
+	pub fn slash_voting_side(
+		voters: Vec<T::AccountId>,
+		pot: &T::AccountId,
+	) -> Result<BalanceOf<T>, DispatchError> {
+		let mut balance: BalanceOf<T> = BalanceOf::<T>::default();
+		for voter in voters {
+			let denominator: BalanceOf<T> = 10u8.into();
+			let slash = T::Currency::reserved_balance(&voter)
+				.checked_div(&denominator.clone())
+				.get_or_insert(BalanceOf::<T>::default())
+				.to_owned();
+			T::Currency::repatriate_reserved(
+				&voter,
+				pot,
+				slash,
+				frame_support::traits::BalanceStatus::Reserved,
+			)?;
+			balance += slash;
+		}
+		Ok(balance)
+	}
+
+	/// Rewards evenly every member from the pot with the provided sum
+	pub fn reward_voting_side(
+		voters: Vec<T::AccountId>,
+		pot: &T::AccountId,
+		total: BalanceOf<T>,
+	) -> Result<(), DispatchError> {
+		let len = voters.len() as u32;
+		let share = total / len.into();
+		for voter in voters {
+			T::Currency::repatriate_reserved(
+				pot,
+				&voter,
+				share,
+				frame_support::traits::BalanceStatus::Reserved,
+			)?;
+		}
+		Ok(())
+	}
+
+	/// Intermediate
+	pub fn account_id() -> T::AccountId {
+		T::PalletId::get().into_account_truncating()
 	}
 }

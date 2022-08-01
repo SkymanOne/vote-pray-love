@@ -36,6 +36,7 @@ pub use frame_support::{
 		IdentityFee, Weight,
 	},
 	StorageValue,
+	PalletId,
 };
 pub use frame_system::Call as SystemCall;
 pub use pallet_balances::Call as BalancesCall;
@@ -328,8 +329,9 @@ parameter_types! {
 	pub const EntryFee: Balance = 30_000 * UNIT;
 	pub const MaxProposals: u32 = 10u32;
 	pub const RevealLength: BlockNumber = 50u32;
-	pub const MinLength: BlockNumber = 50u32;
-	pub const MaxTokens: u8 = 100u8;
+	pub const MinLength: BlockNumber = 30u32;
+	pub const MaxTokens: u8 = 50u8;
+	pub const VotingPalletId: PalletId = PalletId(*b"p/v8t1ng");
 }
 
 impl pallet_slashing_voting::Config for Runtime {
@@ -343,6 +345,7 @@ impl pallet_slashing_voting::Config for Runtime {
 	type RevealLength = RevealLength;
 	type MinLength = MinLength;
 	type MaxVotingTokens = MaxTokens;
+	type PalletId = VotingPalletId;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
