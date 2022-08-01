@@ -23,7 +23,6 @@ use sp_std::prelude::*;
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
-use frame_support::traits::EitherOfDiverse;
 use frame_system::EnsureRoot;
 
 // A few exports that help ease life for downstream crates.

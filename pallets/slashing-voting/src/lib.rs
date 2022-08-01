@@ -314,6 +314,13 @@ pub mod pallet {
 			let current_block = frame_system::Pallet::<T>::block_number();
 			ensure!(reveal_end <= current_block, Error::<T>::TooEarly);
 
+			//refund voting tokens to voters
+			for (_, (account, amount)) in proposal_data.votes.iter().enumerate() {
+				Self::deposit_votes(account, *amount);
+			}
+
+			//TODO: slashing
+
 			Ok(())
 		}
 

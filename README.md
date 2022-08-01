@@ -3,10 +3,12 @@
 Polkadot Blockchain Academy 2022 Cohort Final Exam Project.
 
 ## Milestones
-- [ ] Basic quadratic voting system
-- [ ] Anonymous quadratic system (commit-reveal)
-- [ ] Staking
+- [x] Basic quadratic voting system
+- [x] Anonymous quadratic system (commit-reveal)
+- [x] Staking
 - [ ] Slashing
+- [ ] Caching-out
+- [ ] Tests
 
 ## Potential idea for anonymous voting
 
