@@ -26,13 +26,13 @@ pub mod pallet {
 	use frame_support::traits::{Currency, ReservableCurrency};
 	use frame_support::{
 		pallet_prelude::{ValueQuery, *},
-		Blake2_128Concat, Identity, PalletId,
+		Identity, PalletId,
 	};
 	use frame_system::{ensure_signed, pallet_prelude::*};
 	use sp_runtime::traits::{IdentifyAccount, Member, Verify};
 	use sp_std::boxed::Box;
-	use sp_std::vec::Vec;
 	use sp_std::vec;
+	use sp_std::vec::Vec;
 
 	pub type MemberCount = u32;
 	pub type ProposalIndex = u32;
@@ -163,8 +163,6 @@ pub mod pallet {
 		VoteEnded,
 		/// Vote has already ended when trying to close it
 		VoteAlreadyEnded,
-		/// Reveal phase ended
-		RevealEnded,
 		/// Too early to do action
 		TooEarly,
 		/// Reveal phase has not yet started
@@ -175,8 +173,6 @@ pub mod pallet {
 		SignatureInvalid,
 		/// The voter is in the middle of vote
 		InMotion,
-		/// Proposal is still going
-		NotFinished,
 	}
 
 	//we use unbounded storage because we size of council can vary
@@ -185,9 +181,6 @@ pub mod pallet {
 	#[pallet::without_storage_info]
 	pub struct Pallet<T>(_);
 
-	#[pallet::storage]
-	pub type Members<T: Config> =
-		CountedStorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>, ValueQuery>;
 
 	#[pallet::storage]
 	pub type Proposals<T: Config> =
@@ -198,11 +191,11 @@ pub mod pallet {
 		StorageMap<_, Identity, T::Hash, Proposal<T::AccountId, T::BlockNumber, BalanceOf<T>>>;
 
 	#[pallet::storage]
-	pub type AccountVotes<T: Config> = StorageMap<_, Identity, T::AccountId, VoteToken, ValueQuery>;
+	pub type Members<T: Config> = CountedStorageMap<_, Identity, T::AccountId, VoteToken, ValueQuery>;
 
 	#[pallet::storage]
 	pub type Commits<T: Config> =
-		StorageDoubleMap<_, Identity, T::Hash, Identity, T::AccountId, Commit<T::Signature>>;
+		StorageDoubleMap<_, Identity, T::AccountId, Identity, T::Hash, Commit<T::Signature>>;
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
@@ -250,12 +243,33 @@ pub mod pallet {
 
 			T::Currency::reserve(&signer, T::BasicDeposit::get())?;
 
-			<Members<T>>::insert(&signer, T::BasicDeposit::get());
-
 			//deposit 100 voting tokens to the voter
 			Self::deposit_votes(&signer, 100);
 
 			Self::deposit_event(Event::<T>::Joined(signer));
+
+			Ok(())
+		}
+
+		/// leave committee and cash out
+		#[pallet::weight(10_000_000)]
+		pub fn leave_committee(origin: OriginFor<T>) -> DispatchResult {
+			let signer = ensure_signed(origin)?;
+
+			//check if signer has identity | tested
+			ensure!(T::IdentityProvider::check_existence(&signer), Error::<T>::NoIdentity);
+
+			let active_votes = <Commits<T>>::iter_prefix_values(signer.clone()).count();
+			ensure!(active_votes == 0, Error::<T>::InMotion);
+
+			let balance = T::Currency::unreserve(&signer, T::Currency::reserved_balance(&signer));
+			//remove entries
+			<Members<T>>::remove(signer.clone());
+
+			Self::deposit_event(Event::<T>::Left {
+				account: signer,
+				cashout: balance
+			} );
 
 			Ok(())
 		}
@@ -426,7 +440,7 @@ pub mod pallet {
 			ensure!(Self::is_member(&signer), Error::<T>::NotMember);
 
 			//verify the signature
-			let commit = <Commits<T>>::get(&proposal, &signer);
+			let commit = <Commits<T>>::take(&signer, &proposal);
 			ensure!(commit.is_some(), Error::<T>::NoCommit);
 			let commit = commit.unwrap();
 
@@ -439,9 +453,22 @@ pub mod pallet {
 			let mut proposal_data = proposal_data.unwrap();
 
 			let reveal_exist = proposal_data.reveal_end;
+
 			if let Some(reveal_end) = reveal_exist {
 				let current_block = frame_system::Pallet::<T>::block_number();
-				ensure!(reveal_end > current_block, Error::<T>::RevealEnded);
+
+				// if voter decides to reveal votes after the end, he will just be slashed
+				// the voter is incentivised to perform this action in order to refund voting tokens
+				// or to cash out
+				if current_block > reveal_end {
+					let pot_address = Self::account_id();
+					let _ = Self::slash_voting_side(vec![signer.clone()], &pot_address)?;
+					let amount = u8::pow(commit.number, 2);
+					Self::deposit_votes(&signer, amount);
+
+					//probably need to refund, but let it be additional punishment
+					return Ok(());
+				}
 			}
 
 			let voted = Self::already_voted(&signer, &proposal_data);
@@ -498,7 +525,7 @@ pub mod pallet {
 			ensure!(enough_tokens, Error::<T>::NotEnoughVotingTokens);
 
 			let commit = Commit { signature: data, salt, number };
-			<Commits<T>>::insert(proposal, signer.clone(), commit);
+			<Commits<T>>::insert(signer.clone(), proposal, commit);
 
 			Self::deposit_event(Event::<T>::Committed { account: signer, proposal_hash: proposal });
 
@@ -525,12 +552,12 @@ impl<T: Config> Pallet<T> {
 	}
 
 	pub fn already_committed_and_exist(who: &T::AccountId, proposal_hash: &T::Hash) -> bool {
-		<Commits<T>>::get(proposal_hash, who).is_some()
+		<Commits<T>>::get(who, proposal_hash).is_some()
 	}
 
 	/// Deposit voting tokens to the account and make sure it does not exceed the limit
 	pub fn deposit_votes(who: &T::AccountId, tokens: u8) {
-		<AccountVotes<T>>::mutate(who, |balance| {
+		<Members<T>>::mutate(who, |balance| {
 			*balance += tokens;
 			if *balance > 100u8 {
 				*balance = 100u8;
@@ -541,7 +568,7 @@ impl<T: Config> Pallet<T> {
 	/// tries to decrease the voting tokens of a specific account by specified amount.
 	/// Returns false if account does not have enough voting tokens
 	pub fn decrease_votes(who: &T::AccountId, amount: u8) -> bool {
-		<AccountVotes<T>>::try_mutate(who, |balance| {
+		<Members<T>>::try_mutate(who, |balance| {
 			if *balance < amount {
 				return Err(());
 			}
