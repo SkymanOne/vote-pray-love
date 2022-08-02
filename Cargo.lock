@@ -4110,6 +4110,8 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
+ "pallet-balances",
+ "pallet-identity",
  "parity-scale-codec",
  "scale-info",
  "sp-core",

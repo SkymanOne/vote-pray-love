@@ -46,16 +46,6 @@ pub enum Vote {
 	No,
 }
 
-/// To generate signature
-///  ```
-///  fn generate() -> String {
-///     let pair: sp_core::sr25519::Pair = Pair::from_string("//Alice", None).unwrap();
-///     let payload = (Vote::No, 10u32).encode();
-///     let payload: [u8; 6] = payload.try_into().unwrap();
-///     let signed = pair.sign(&payload).0;
-///     format!("{:02x?}", signed)
-/// }
-/// ```
 
 #[derive(Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, TypeInfo)]
 pub struct Commit<Signature> {

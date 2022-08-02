@@ -1,5 +1,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
 use frame_support::traits::Get;
 use frame_support::traits::ReservableCurrency;
 use frame_support::BoundedVec;

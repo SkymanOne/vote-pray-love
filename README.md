@@ -9,7 +9,7 @@ The additional feature is the slashing mechanism which provides an incentive for
 
 Navigate to [`pallet/slashing-voting`](pallets/slashing-voting/README.md)
 
-**NOTE**: *This is an experimental pallet, no research has not conducted to actually prove economic costs of this governance system.*
+**NOTE**: *This is an experimental pallet, no research has been conducted to actually prove economic costs of this governance system.*
 
 ## Idea
 

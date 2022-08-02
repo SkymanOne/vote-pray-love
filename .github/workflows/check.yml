@@ -37,3 +37,7 @@ jobs:
       - name: Check Build
         run: |
           SKIP_WASM_BUILD=1 cargo check --release
+
+      - name: Test the pallet
+        run: |
+          cargo test -p pallet-slashing-voting
