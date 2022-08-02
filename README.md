@@ -7,6 +7,8 @@ Polkadot Blockchain Academy 2022 Cohort Final Exam Project.
 This is a pallet quadratic voting pallet based off substrate [collective pallet](https://marketplace.substrate.io/pallets/pallet-collective/).
 The additional feature is the slashing mechanism which provides an incentive for voters to collaborate in the decision making process.
 
+Navigate to [`pallet/slashing-voting`](pallets/slashing-voting/README.md)
+
 **NOTE**: *This is an experimental pallet, no research has not conducted to actually prove economic costs of this governance system.*
 
 ## Idea
