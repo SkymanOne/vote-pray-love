@@ -5,6 +5,8 @@ use frame_support::sp_runtime::RuntimeDebug;
 use scale_info::TypeInfo;
 use sp_std::prelude::*;
 
+pub type VoteToken = u8;
+
 #[derive(Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, MaxEncodedLen, TypeInfo)]
 pub enum Data {
 	/// The data is stored directly.
@@ -33,7 +35,9 @@ pub struct Proposal<AccountId, BlockNumber, Balance> {
 	/// otherwise we need to parse `votes` vector and compose vector of required format
 	pub revealed: Vec<AccountId>,
 	/// The amount that was slashed and distributed
-	pub payout: Balance
+	pub payout: Balance,
+	/// Is proposal closed
+	pub closed: bool
 }
 
 #[derive(Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, TypeInfo)]
@@ -62,4 +66,13 @@ pub struct Commit<Signature> {
 	pub number: u8,
 	/// Salt which comes with the choice to ensure the security
 	pub salt: u32,
+}
+
+#[derive(Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, TypeInfo, Default)]
+pub struct VoterBalance<Balance> {
+	/// The number of votes the voter gives to their choice.
+	/// Must be exposed and unencrypted to allow double spend of votes
+	pub voting_tokens: VoteToken,
+	/// Salt which comes with the choice to ensure the security
+	pub reserved_balance: Balance,
 }
