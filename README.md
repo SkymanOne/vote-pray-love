@@ -1,4 +1,4 @@
-# Vote Pray Love
+# Vote 📣 Pray 🙏 Love 🤍
 [![Check Set-Up & Build](https://github.com/SkymanOne/vote-pray-love/actions/workflows/check.yml/badge.svg)](https://github.com/SkymanOne/vote-pray-love/actions/workflows/check.yml)
 
 Polkadot Blockchain Academy 2022 Cohort Final Exam Project.
@@ -7,7 +7,7 @@ Polkadot Blockchain Academy 2022 Cohort Final Exam Project.
 This is a pallet quadratic voting pallet based off substrate [collective pallet](https://marketplace.substrate.io/pallets/pallet-collective/).
 The additional feature is the slashing mechanism which provides an incentive for voters to collaborate in the decision making process.
 
-Navigate to [`pallet/slashing-voting`](pallets/slashing-voting/README.md)
+Navigate to [`pallet/slashing-voting`](pallets/slashing-voting/README.md) to see tests and implementation
 
 **NOTE**: *This is an experimental pallet, no research has been conducted to actually prove economic costs of this governance system.*
 
@@ -26,6 +26,11 @@ The idea behind is to introduce the quadratic voting, make it anonymous and slas
 * If the voter is in majority, they receive even proportion of the reward from the *"pot"*
 * If the vote is a tie, both parties get slashed and the money go to proposer
 * Once the voter has finished all proposal, they can leave the organisation and *cash out*
+
+### Name
+The name is quite random. I just like how it sounds :)
+
+One way to interpret it: *Vote* for choices, *Pray* for luck and *Love* the new governance system.
 
 ## Motivation
 The classical voting system has very little incentive for voters. The average vote turn-up does not exceed 10%. These ratio can not provide the true representation of opinion of the population. Therefore, the additional incentive has to be provided. I was interested in running this sort of system as a game theory experiment to see
@@ -67,7 +72,17 @@ A summary of what has been implemented and what's planned:
 - [x] Slashing
 - [x] Caching-out
 - [x] Docs
-- [ ] Tests & Mocks
+- [x] Tests & Mocks
+
+### Stretch goals
+- [ ] More tests
+- [ ] Callable intrinsics for proposals
+- [ ] Advanced treasury management
+
+## Compromises
+- The current system only supports simple text based proposals. Callable intrinsics will be added later
+- Weights of dispatchable functions have not been benchmarked and do not represent true economic value
+- If the voter reveals the choice after the reveal phase deadline, the slashed funds go into pot and stay there (burned). A better approach might be considered how to distribute those funds among truthful voters later.
 
 ## Running
 Simply run script `build-run.sh` script to build a chain in release mode and run a dev node.
@@ -83,5 +98,9 @@ Refer to [substrate setup instructions](docs/substrate-setup.md) to start hackin
 
 ## Resources
 
-[Quadratic voting](https://www.economist.com/interactive/2021/12/18/quadratic-voting)
-[Commit - reveal](https://karl.tech/learning-solidity-part-2-voting/)
+- [Quadratic voting](https://www.economist.com/interactive/2021/12/18/quadratic-voting)
+- [*Commit - reveal* scheme](https://karl.tech/learning-solidity-part-2-voting/)
+- [Substrate - Blockchain Development Framework](https://substrate.io)
+
+## License
+Apache License, Version 2.0 (LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0)
