@@ -39,7 +39,7 @@ pub type Index = u32;
 pub type Hash = sp_core::H256;
 
 /// should be random, but we leave it const for simplicity
-const SALT: u8 = 5u8;
+const SALT: u32 = 10u32;
 
 frame_support::construct_runtime!(
 	pub enum Test where
@@ -163,23 +163,23 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 
 
 pub fn get_alice() -> AccountId {
-	get_account_id_from_seed::<sr25519::Public>("//Alice")
+	get_account_id_from_seed::<sr25519::Public>("Alice")
 }
 
 pub fn get_bob() -> AccountId {
-	get_account_id_from_seed::<sr25519::Public>("//Bob")
+	get_account_id_from_seed::<sr25519::Public>("Bob")
 }
 
 pub fn get_charlie() -> AccountId {
-	get_account_id_from_seed::<sr25519::Public>("//Charlie")
+	get_account_id_from_seed::<sr25519::Public>("Charlie")
 }
 
-fn generate(key: &str, vote: Vote) -> String {
-	let pair: sp_core::sr25519::Pair = Pair::from_string(key, None).unwrap();
+pub fn generate(account: &str, vote: Vote) -> (sp_core::sr25519::Signature, u32) {
+	let pair: sp_core::sr25519::Pair = Pair::from_string(account, None).unwrap();
 	let payload = (vote, SALT).encode();
 	let payload = payload.as_slice().to_owned();
 	let signed = pair.sign(&payload);
-	format!("{:02x?}", signed.0)
+	(signed, SALT)
 }
 
 /// Generate a crypto pair from seed.
