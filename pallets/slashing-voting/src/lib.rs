@@ -47,6 +47,7 @@ pub mod pallet {
 	/// Shorted type for extracting current balance of a user
 	pub type BalanceOf<T> =
 		<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
+
 	pub trait IdentityProvider<AccountId> {
 		fn check_existence(account: &AccountId) -> bool;
 	}

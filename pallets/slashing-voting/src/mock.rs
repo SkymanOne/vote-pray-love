@@ -1,4 +1,5 @@
 use crate as pallet_voting;
+use crate::types::*;
 use frame_system::EnsureRoot;
 use frame_support::pallet_prelude::ConstU32;
 use frame_support::traits::ConstU128;
@@ -11,6 +12,8 @@ use sp_runtime::{
 	traits::{BlakeTwo256, IdentityLookup, IdentifyAccount, Verify},
 	MultiSignature,
 };
+use frame_support::pallet_prelude::*;
+use sp_core::{sr25519, Pair, Public};
 
 pub type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 pub type Block = frame_system::mocking::MockBlock<Test>;
@@ -34,6 +37,9 @@ pub type Index = u32;
 
 /// A hash of some data used by the chain.
 pub type Hash = sp_core::H256;
+
+/// should be random, but we leave it const for simplicity
+const SALT: u8 = 5u8;
 
 frame_support::construct_runtime!(
 	pub enum Test where
@@ -81,7 +87,7 @@ parameter_types! {
 	pub const FieldDeposit: Balance = 0;
 	pub const SubAccountDeposit: Balance = 0;
 	pub const MaxSubAccounts: u32 = 100;
-	pub const MaxAdditionalFields: u32 = 100;
+	pub const MaxAdditionalFields: u32 = 1;
 	pub const MaxRegistrars: u32 = 20;
 }
 
@@ -146,5 +152,49 @@ impl pallet_voting::Config for Test {
 
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
+	let mut t = system::GenesisConfig::default().build_storage::<Test>().unwrap();
+	pallet_balances::GenesisConfig::<Test> {
+		balances: vec![(get_alice(), 1_000_000 * UNIT), (get_bob(), 1_000_000 * UNIT), (get_charlie(), 20_000 * UNIT)]
+	}
+	.assimilate_storage(&mut t)
+	.unwrap();
+	t.into()
+}
+
+
+pub fn get_alice() -> AccountId {
+	get_account_id_from_seed::<sr25519::Public>("//Alice")
+}
+
+pub fn get_bob() -> AccountId {
+	get_account_id_from_seed::<sr25519::Public>("//Bob")
+}
+
+pub fn get_charlie() -> AccountId {
+	get_account_id_from_seed::<sr25519::Public>("//Charlie")
+}
+
+fn generate(key: &str, vote: Vote) -> String {
+	let pair: sp_core::sr25519::Pair = Pair::from_string(key, None).unwrap();
+	let payload = (vote, SALT).encode();
+	let payload = payload.as_slice().to_owned();
+	let signed = pair.sign(&payload);
+	format!("{:02x?}", signed.0)
+}
+
+/// Generate a crypto pair from seed.
+pub fn get_from_seed<TPublic: Public>(seed: &str) -> <TPublic::Pair as Pair>::Public {
+	TPublic::Pair::from_string(&format!("//{}", seed), None)
+		.expect("static values are valid; qed")
+		.public()
+}
+
+type AccountPublic = <Signature as Verify>::Signer;
+
+/// Generate an account ID from seed.
+pub fn get_account_id_from_seed<TPublic: Public>(seed: &str) -> AccountId
+where
+	AccountPublic: From<<TPublic::Pair as Pair>::Public>,
+{
+	AccountPublic::from(get_from_seed::<TPublic>(seed)).into_account()
 }
