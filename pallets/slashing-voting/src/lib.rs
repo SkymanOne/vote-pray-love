@@ -38,13 +38,9 @@ pub mod pallet {
 	pub type ProposalIndex = u32;
 	pub type VoteToken = u8;
 
+	/// Shorted type for extracting current balance of a user
 	pub type BalanceOf<T> =
 		<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
-
-	// type ProposalOf<T> = Box<
-	// 	Proposal<<T as frame_system::Config>::AccountId, <T as frame_system::Config>::BlockNumber>,
-	// >;
-
 	pub trait IdentityProvider<AccountId> {
 		fn check_existence(account: &AccountId) -> bool;
 	}
@@ -180,23 +176,21 @@ pub mod pallet {
 	#[pallet::generate_store(pub(super) trait Store)]
 	#[pallet::without_storage_info]
 	pub struct Pallet<T>(_);
-
-
+	/// Collection of all proposals hashes
 	#[pallet::storage]
 	pub type Proposals<T: Config> =
 		StorageValue<_, BoundedVec<T::Hash, T::MaxProposals>, ValueQuery>;
-
+	/// The actual data of proposal
 	#[pallet::storage]
 	pub type ProposalData<T: Config> =
 		StorageMap<_, Identity, T::Hash, Proposal<T::AccountId, T::BlockNumber, BalanceOf<T>>>;
-
+	/// The list of council member with their voting tokens
 	#[pallet::storage]
 	pub type Members<T: Config> = CountedStorageMap<_, Identity, T::AccountId, VoteToken, ValueQuery>;
-
+	/// Vote commits submitted by voters
 	#[pallet::storage]
 	pub type Commits<T: Config> =
 		StorageDoubleMap<_, Identity, T::AccountId, Identity, T::Hash, Commit<T::Signature>>;
-
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
 
@@ -213,7 +207,7 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> GenesisBuild<T> for GenesisConfig {
 		fn build(&self) {
-			// Create Treasury account
+			// Create pot account
 			let account_id = <Pallet<T>>::account_id();
 			let min = T::Currency::minimum_balance();
 			if T::Currency::free_balance(&account_id) < min {
@@ -259,6 +253,7 @@ pub mod pallet {
 			//check if signer has identity | tested
 			ensure!(T::IdentityProvider::check_existence(&signer), Error::<T>::NoIdentity);
 
+			// ensure that user is not in the middle of voting process
 			let active_votes = <Commits<T>>::iter_prefix_values(signer.clone()).count();
 			ensure!(active_votes == 0, Error::<T>::InMotion);
 
@@ -290,6 +285,7 @@ pub mod pallet {
 			//check if signer is a member already | tested
 			ensure!(Self::is_member(&signer), Error::<T>::NotMember);
 
+			// ensure that we don't have too many proposal
 			let length_res = <Proposals<T>>::decode_len();
 			if let Some(length) = length_res {
 				if length == T::MaxProposals::get() as usize {
@@ -297,17 +293,21 @@ pub mod pallet {
 				}
 			}
 
+			// ensure that proposal exists
 			let proposal_hash = T::Hashing::hash_of(&proposal_text);
 			let (exist, _) = Self::proposal_exist(&proposal_hash);
 			ensure!(!exist, Error::<T>::DuplicateProposal);
 
+			// try to append, if error happens, this is probably we have too many proposals
 			ensure!(
 				<Proposals<T>>::try_append(proposal_hash).is_ok(),
 				Error::<T>::TooManyProposals
 			);
 
+			// calculate the end block of proposal
 			let end = duration + frame_system::Pallet::<T>::block_number();
 
+			// construct the proposal object
 			let proposal = Proposal {
 				title: *proposal_text,
 				proposer: signer.clone(),
@@ -321,7 +321,6 @@ pub mod pallet {
 			};
 
 			<ProposalData<T>>::insert(proposal_hash, proposal);
-
 			Self::deposit_event(Event::<T>::Proposed { account: signer, proposal_hash });
 
 			Ok(())
@@ -335,15 +334,21 @@ pub mod pallet {
 			//check if signer is a member already | tested
 			ensure!(Self::is_member(&signer), Error::<T>::NotMember);
 
+			//ensure that proposal data exists
 			let proposal_data = <ProposalData<T>>::get(&proposal);
 			ensure!(proposal_data.is_some(), Error::<T>::ProposalMissing);
 
+			//if we are here, then we know that data exists and we can unwrap it
 			let mut proposal_data = proposal_data.unwrap();
+
+			// if reveal end is set, then we know that voting phase ended
 			ensure!(proposal_data.reveal_end.is_none(), Error::<T>::VoteAlreadyEnded);
 
+			//make sure that we don't close voting phase too early
 			let current_block = frame_system::Pallet::<T>::block_number();
 			ensure!(proposal_data.poll_end <= current_block, Error::<T>::TooEarly);
 
+			// set the end of reveal phase
 			let current_block = frame_system::Pallet::<T>::block_number();
 			proposal_data.reveal_end = Some(current_block + T::RevealLength::get());
 
@@ -360,10 +365,14 @@ pub mod pallet {
 			//check if signer is a member already | tested
 			ensure!(Self::is_member(&signer), Error::<T>::NotMember);
 
+			//ensure that proposal data exists
 			let proposal_data = <ProposalData<T>>::get(&proposal);
 			ensure!(proposal_data.is_some(), Error::<T>::ProposalMissing);
 
+			//if we are here, then we know that data exists and we can unwrap it
 			let mut proposal_data = proposal_data.unwrap();
+
+			//if reveal phase end is not set, that means that we did not start it
 			ensure!(proposal_data.reveal_end.is_some(), Error::<T>::RevealNotStarted);
 
 			let reveal_end = proposal_data.reveal_end.unwrap();
@@ -376,7 +385,7 @@ pub mod pallet {
 				Self::deposit_votes(account, amount);
 			}
 
-			//deduce winning side
+			//deduce winning side, slash and reward voters
 			let result = proposal_data.ayes.cmp(&proposal_data.nays);
 			let pot_address = Self::account_id();
 			let amount: BalanceOf<T>;
@@ -424,6 +433,8 @@ pub mod pallet {
 					)?;
 				},
 			}
+
+			//set the amount that was slashed and paid
 			proposal_data.payout = amount;
 			<ProposalData<T>>::insert(&proposal, proposal_data);
 
@@ -444,7 +455,9 @@ pub mod pallet {
 			ensure!(commit.is_some(), Error::<T>::NoCommit);
 			let commit = commit.unwrap();
 
+			//get the data that supposed to be signed
 			let data = (vote.clone(), commit.salt).encode();
+			//and check signature validity
 			let valid_sign = commit.signature.verify(data.as_slice(), &signer);
 			ensure!(valid_sign, Error::<T>::SignatureInvalid);
 
@@ -479,7 +492,9 @@ pub mod pallet {
 				Vote::No => proposal_data.nays += commit.number as u32,
 			}
 
+			//push the vote counters
 			proposal_data.votes.push((signer.clone(), commit.number, vote));
+			//update the list of voters that revealed their choices
 			proposal_data.revealed.push(signer.clone());
 
 			<ProposalData<T>>::insert(proposal, proposal_data);
@@ -506,24 +521,26 @@ pub mod pallet {
 				ensure!(false, Error::<T>::InvalidArgument);
 			}
 
+			//make sure that vote has not been committed before
 			let committed = Self::already_committed_and_exist(&signer, &proposal);
 			ensure!(!committed, Error::<T>::DuplicateVote);
 
+			//ensure that proposal data exists
 			let proposal_data = <ProposalData<T>>::get(&proposal);
 			ensure!(proposal_data.is_some(), Error::<T>::ProposalMissing);
 			let proposal_data = proposal_data.unwrap();
 
+			//ensure that we don't commit to finished proposal
 			let current_block = frame_system::Pallet::<T>::block_number();
 			ensure!(current_block < proposal_data.poll_end, Error::<T>::VoteEnded);
 
-			let mut tokens_to_take: u8 = number;
-			if number > 1 {
-				tokens_to_take = number.pow(2);
-			}
-
-			let enough_tokens = Self::decrease_votes(&signer, tokens_to_take);
+			//subtract voting tokens based on quadratic scale
+			//i.e. tokens=vote^2
+			//make sure that voter has enough voting tokens
+			let enough_tokens = Self::decrease_votes(&signer, number.pow(2));
 			ensure!(enough_tokens, Error::<T>::NotEnoughVotingTokens);
 
+			//create commit instance
 			let commit = Commit { signature: data, salt, number };
 			<Commits<T>>::insert(signer.clone(), proposal, commit);
 
@@ -620,7 +637,7 @@ impl<T: Config> Pallet<T> {
 		Ok(())
 	}
 
-	/// Intermediate
+	/// get voting pot address to deposit slashed tokens to and take rewards from
 	pub fn account_id() -> T::AccountId {
 		T::PalletId::get().into_account_truncating()
 	}

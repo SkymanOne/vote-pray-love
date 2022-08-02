@@ -28,7 +28,9 @@ pub struct Proposal<AccountId, BlockNumber, Balance> {
 	/// The number of votes each voter gave
 	pub votes: Vec<(AccountId, u8, Vote)>,
 	/// Users who revealed their choices.
-	/// Allows to verify who did not reveal on time
+	/// Allows to verify who did not reveal on time.
+	/// This may look as data duplication, but it will reduce runtime
+	/// otherwise we need to parse `votes` vector and compose vector of required format
 	pub revealed: Vec<AccountId>,
 	/// The amount that was slashed and distributed
 	pub payout: Balance
