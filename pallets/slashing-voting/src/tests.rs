@@ -242,8 +242,6 @@ fn close_vote_success() {
 	});
 }
 
-
-
 #[test]
 fn cannot_close_vote_before_deadline() {
 	new_test_ext().execute_with(|| {
@@ -340,6 +338,198 @@ fn cannot_close_reveal_before_vote_end() {
 
 		let result = QuadraticVoting::close_reveal(origin, proposal_hash);
 		assert_noop!(result, Error::<Test>::RevealNotStarted);
+	});
+}
+
+#[test]
+fn slashed_correctly() {
+	new_test_ext().execute_with(|| {
+		let alice = get_alice();
+		let origin_alice = Origin::signed(alice.clone());
+		let _ = Identity::set_identity(origin_alice.clone(), Box::new(data()));
+		let _ = QuadraticVoting::join_committee(origin_alice.clone());
+
+		let bob = get_bob();
+		let origin_bob = Origin::signed(bob.clone());
+		let _ = Identity::set_identity(origin_bob.clone(), Box::new(data()));
+		let _ = QuadraticVoting::join_committee(origin_bob.clone());
+
+		let _ = QuadraticVoting::create_proposal(
+			origin_alice.clone(),
+			Box::new(Data::Raw(BoundedVec::default())),
+			100,
+		);
+
+		let (sig, salt) = generate("//Alice", Vote::Yes);
+		let results = <Proposals<Test>>::get();
+		let proposal_hash = results[0];
+
+		let sig = sp_runtime::MultiSignature::Sr25519(sig);
+		let _ = QuadraticVoting::commit_vote(origin_alice, proposal_hash, sig, 8, salt);
+
+		let (sig, salt) = generate("//Bob", Vote::No);
+		let results = <Proposals<Test>>::get();
+		let proposal_hash = results[0];
+
+		let sig = sp_runtime::MultiSignature::Sr25519(sig);
+		let _ = QuadraticVoting::commit_vote(origin_bob.clone(), proposal_hash, sig, 2, salt);
+
+		System::set_block_number(101);
+
+		let proposal_hash = <Proposals<Test>>::get()[0];
+		let _ = QuadraticVoting::close_vote(origin_bob.clone(), proposal_hash);
+
+		System::set_block_number(160);
+
+		let alice_original_balance = <Members<Test>>::get(alice.clone()).reserved_balance;
+		let bob_original_balance = <Members<Test>>::get(bob.clone()).reserved_balance;
+
+		let _ = QuadraticVoting::close_reveal(origin_bob, proposal_hash);
+
+		let alice_current_balance = <Members<Test>>::get(alice).reserved_balance;
+		let bob_current_balance = <Members<Test>>::get(bob).reserved_balance;
+
+		let slash = bob_original_balance - bob_current_balance;
+		assert!(alice_current_balance == alice_original_balance + slash);
+	});
+}
+
+#[test]
+fn votes_deducted_and_refunded() {
+	new_test_ext().execute_with(|| {
+		let alice = get_alice();
+		let origin_alice = Origin::signed(alice.clone());
+		let _ = Identity::set_identity(origin_alice.clone(), Box::new(data()));
+		let _ = QuadraticVoting::join_committee(origin_alice.clone());
+
+		let bob = get_bob();
+		let origin_bob = Origin::signed(bob.clone());
+		let _ = Identity::set_identity(origin_bob.clone(), Box::new(data()));
+		let _ = QuadraticVoting::join_committee(origin_bob.clone());
+
+		let _ = QuadraticVoting::create_proposal(
+			origin_alice.clone(),
+			Box::new(Data::Raw(BoundedVec::default())),
+			100,
+		);
+
+		let results = <Proposals<Test>>::get();
+		let proposal_hash = results[0];
+
+		let (sig, salt) = generate("//Alice", Vote::Yes);
+		let sig = sp_runtime::MultiSignature::Sr25519(sig);
+		let _ = QuadraticVoting::commit_vote(origin_alice.clone(), proposal_hash, sig, 8, salt);
+
+		let alice_original_votes = <Members<Test>>::get(alice.clone()).voting_tokens;
+		assert!(alice_original_votes == MaxTokens::get() - 8_u8.pow(2));
+
+		let (sig, salt) = generate("//Bob", Vote::No);
+		let sig = sp_runtime::MultiSignature::Sr25519(sig);
+		let _ = QuadraticVoting::commit_vote(origin_bob.clone(), proposal_hash, sig, 2, salt);
+
+		let bob_original_votes = <Members<Test>>::get(bob.clone()).voting_tokens;
+		assert!(bob_original_votes == MaxTokens::get() - 2_u8.pow(2));
+
+		System::set_block_number(101);
+
+		let proposal_hash = <Proposals<Test>>::get()[0];
+		let _ = QuadraticVoting::close_vote(origin_bob.clone(), proposal_hash);
+
+		let _ = QuadraticVoting::reveal_vote(origin_alice, proposal_hash, Vote::Yes);
+		let _ = QuadraticVoting::reveal_vote(origin_bob.clone(), proposal_hash, Vote::No);
+
+		System::set_block_number(160);
+
+		let _ = QuadraticVoting::close_reveal(origin_bob, proposal_hash);
+
+		let alice_tokens = <Members<Test>>::get(alice).voting_tokens;
+		let bob_tokens = <Members<Test>>::get(bob).voting_tokens;
+
+		assert!(alice_tokens == MaxTokens::get());
+		assert!(bob_tokens == MaxTokens::get());
+	});
+}
+
+#[test]
+fn cannot_leave_while_in_vote() {
+	new_test_ext().execute_with(|| {
+		let alice = get_alice();
+		let origin_alice = Origin::signed(alice);
+		let _ = Identity::set_identity(origin_alice.clone(), Box::new(data()));
+		let _ = QuadraticVoting::join_committee(origin_alice.clone());
+
+		let _ = QuadraticVoting::create_proposal(
+			origin_alice.clone(),
+			Box::new(Data::Raw(BoundedVec::default())),
+			100,
+		);
+
+		let results = <Proposals<Test>>::get();
+		let proposal_hash = results[0];
+
+		let (sig, salt) = generate("//Alice", Vote::Yes);
+		let sig = sp_runtime::MultiSignature::Sr25519(sig);
+		let _ = QuadraticVoting::commit_vote(origin_alice.clone(), proposal_hash, sig, 8, salt);
+
+		let result = QuadraticVoting::leave_committee(origin_alice.clone());
+		assert_noop!(result, Error::<Test>::InMotion);
+
+		System::set_block_number(110);
+
+		let _ = QuadraticVoting::close_vote(origin_alice.clone(), proposal_hash);
+
+		let result = QuadraticVoting::leave_committee(origin_alice);
+		assert_noop!(result, Error::<Test>::InMotion);
+	});
+}
+
+#[test]
+fn cashout() {
+	new_test_ext().execute_with(|| {
+		let alice = get_alice();
+		let origin_alice = Origin::signed(alice.clone());
+		let _ = Identity::set_identity(origin_alice.clone(), Box::new(data()));
+		let _ = QuadraticVoting::join_committee(origin_alice.clone());
+
+		let bob = get_bob();
+		let origin_bob = Origin::signed(bob);
+		let _ = Identity::set_identity(origin_bob.clone(), Box::new(data()));
+		let _ = QuadraticVoting::join_committee(origin_bob.clone());
+
+		let _ = QuadraticVoting::create_proposal(
+			origin_alice.clone(),
+			Box::new(Data::Raw(BoundedVec::default())),
+			100,
+		);
+
+		let results = <Proposals<Test>>::get();
+		let proposal_hash = results[0];
+
+		let (sig, salt) = generate("//Alice", Vote::Yes);
+		let sig = sp_runtime::MultiSignature::Sr25519(sig);
+		let _ = QuadraticVoting::commit_vote(origin_alice.clone(), proposal_hash, sig, 8, salt);
+
+
+		let (sig, salt) = generate("//Bob", Vote::No);
+		let sig = sp_runtime::MultiSignature::Sr25519(sig);
+		let _ = QuadraticVoting::commit_vote(origin_bob.clone(), proposal_hash, sig, 2, salt);
+
+		System::set_block_number(101);
+
+		let proposal_hash = <Proposals<Test>>::get()[0];
+		let _ = QuadraticVoting::close_vote(origin_bob.clone(), proposal_hash);
+
+		let _ = QuadraticVoting::reveal_vote(origin_alice.clone(), proposal_hash, Vote::Yes);
+		let _ = QuadraticVoting::reveal_vote(origin_bob.clone(), proposal_hash, Vote::No);
+
+		System::set_block_number(160);
+
+		let _ = QuadraticVoting::close_reveal(origin_bob, proposal_hash);
+
+		let result = QuadraticVoting::leave_committee(origin_alice);
+		assert_ok!(result);
+
+		assert!(Balances::reserved_balance(alice) == 0);
 	});
 }
 
