@@ -48,6 +48,9 @@ pub use sp_runtime::{Perbill, Permill};
 
 pub const UNIT: u128 = 1000000000000;
 
+/// Existential deposit.
+pub const EXISTENTIAL_DEPOSIT: u128 = 500;
+
 /// An index to a block.
 pub type BlockNumber = u32;
 
@@ -245,7 +248,7 @@ impl pallet_balances::Config for Runtime {
 	/// The ubiquitous event type.
 	type Event = Event;
 	type DustRemoval = ();
-	type ExistentialDeposit = ConstU128<500>;
+	type ExistentialDeposit = ConstU128<EXISTENTIAL_DEPOSIT>;
 	type AccountStore = System;
 	type WeightInfo = pallet_balances::weights::SubstrateWeight<Runtime>;
 }
