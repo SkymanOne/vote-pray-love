@@ -487,8 +487,6 @@ pub mod pallet {
 					//probably need to refund, but let it be additional punishment
 					return Ok(());
 				}
-			} else {
-				ensure!(false, Error::<T>::RevealNotStarted);
 			}
 
 			//get the data that supposed to be signed
